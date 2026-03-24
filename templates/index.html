@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>動画ログ照合システム</title>
+<style>
+  :root {
+    --primary: #2D6A9F;
+    --primary-light: #EBF3FB;
+    --danger: #C00000;
+    --danger-light: #FFF0F0;
+    --warning: #E6A817;
+    --warning-light: #FFFBF0;
+    --success: #2D7A3A;
+    --success-light: #F0FAF2;
+    --gray: #6B7280;
+    --gray-light: #F3F4F6;
+    --border: #D1D5DB;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    background: #F0F4F8;
+    color: #1F2937;
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--primary);
+    color: white;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  header h1 { font-size: 1.3rem; font-weight: 700; }
+  header p { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+
+  .container { max-width: 960px; margin: 32px auto; padding: 0 16px; }
+
+  .card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+
+  .card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--primary-light);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .badge {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-weight: 600;
+  }
+  .badge-required { background: var(--danger); color: white; }
+  .badge-optional { background: var(--gray); color: white; }
+
+  .upload-area {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--gray-light);
+    position: relative;
+  }
+  .upload-area:hover, .upload-area.dragover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .upload-area input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+  .upload-label { font-size: 0.9rem; color: var(--gray); }
+  .upload-label strong { color: var(--primary); }
+  .upload-hint { font-size: 0.75rem; color: var(--gray); margin-top: 4px; }
+
+  .file-list { margin-top: 10px; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--primary-light);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+  .file-item .remove-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--danger);
+    font-size: 1rem;
+    padding: 0 4px;
+  }
+
+  .info-box {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    border-radius: 0 8px 8px 0;
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    margin-top: 12px;
+    line-height: 1.6;
+  }
+
+  .submit-btn {
+    width: 100%;
+    padding: 16px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .submit-btn:hover { background: #1E5080; }
+  .submit-btn:disabled { background: #9CA3AF; cursor: not-allowed; }
+
+  .progress-area {
+    display: none;
+    text-align: center;
+    padding: 24px;
+  }
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--primary-light);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .result-area { display: none; }
+
+  .alert {
+    padding: 14px 18px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 12px;
+  }
+  .alert-success { background: var(--success-light); color: var(--success); border: 1px solid #A7F3D0; }
+  .alert-warning { background: var(--warning-light); color: #92400E; border: 1px solid #FCD34D; }
+  .alert-error { background: var(--danger-light); color: var(--danger); border: 1px solid #FCA5A5; }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .summary-item {
+    background: var(--gray-light);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+  }
+  .summary-item .count { font-size: 2rem; font-weight: 700; }
+  .summary-item .label { font-size: 0.75rem; color: var(--gray); margin-top: 4px; }
+  .summary-item.danger { background: var(--danger-light); }
+  .summary-item.danger .count { color: var(--danger); }
+  .summary-item.warning { background: var(--warning-light); }
+  .summary-item.warning .count { color: var(--warning); }
+  .summary-item.success { background: var(--success-light); }
+  .summary-item.success .count { color: var(--success); }
+
+  .download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--success);
+    color: white;
+    border-radius: 8px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    font-size: 1rem;
+    margin-top: 16px;
+    transition: background 0.2s;
+  }
+  .download-btn:hover { background: #1D5A27; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+  }
+  .legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid #ddd;
+  }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📊 動画ログ照合システム</h1>
+    <p>研修動画の視聴ログと出勤記録を照合し、勤務時間外視聴をチェックします</p>
+  </div>
+  <a href="/logout" style="margin-left:auto;color:rgba(255,255,255,0.8);font-size:0.85rem;text-decoration:none;padding:6px 14px;border:1px solid rgba(255,255,255,0.4);border-radius:6px;">ログアウト</a>
+</header>
+
+<div class="container">
+  <form id="uploadForm" enctype="multipart/form-data">
+
+    <!-- 動画ログ -->
+    <div class="card">
+      <div class="card-title">
+        🎬 動画ログ <span class="badge badge-required">必須</span>
+      </div>
+      <div class="upload-area" id="videoDropArea">
+        <input type="file" name="video_log" id="videoLogInput" accept=".xlsx,.xls,.xlsm">
+        <div class="upload-icon">📂</div>
+        <div class="upload-label"><strong>クリックまたはドラッグ&ドロップ</strong>でファイルを選択</div>
+        <div class="upload-hint">対応形式: Excel (.xlsx / .xls)</div>
+      </div>
+      <div class="file-list" id="videoFileList"></div>
+      <div class="info-box">
+        <strong>必要な列:</strong> 社員番号 / 氏名、日付、視聴開始時刻、視聴終了時刻、動画タイトル（進捗率は任意）<br>
+        列名は日本語・英語どちらにも対応しています。
+      </div>
+    </div>
+
+    <!-- 出勤記録 -->
+    <div class="card">
+      <div class="card-title">
+        🗂 出勤記録 <span class="badge badge-optional">任意・複数可</span>
+      </div>
+      <div class="upload-area" id="attendanceDropArea">
+        <input type="file" name="attendance" id="attendanceInput" accept=".xlsx,.xls,.xlsm,.csv,.pdf" multiple>
+        <div class="upload-icon">📋</div>
+        <div class="upload-label"><strong>クリックまたはドラッグ&ドロップ</strong>でファイルを選択</div>
+        <div class="upload-hint">対応形式: Excel / CSV / PDF｜複数ファイル同時アップロード可</div>
+      </div>
+      <div class="file-list" id="attendanceFileList"></div>
+      <div class="info-box">
+        <strong>必要な列:</strong> 社員番号 / 氏名、日付、出勤時刻、退勤時刻<br>
+        月次・日次など複数ファイルをまとめてアップロードできます。
+      </div>
+    </div>
+
+    <!-- 雇用契約書 -->
+    <div class="card">
+      <div class="card-title">
+        📄 雇用契約書（所定勤務時間） <span class="badge badge-optional">任意</span>
+      </div>
+      <div class="upload-area" id="contractDropArea">
+        <input type="file" name="contracts" id="contractInput" accept=".xlsx,.xls,.xlsm,.csv,.pdf" multiple>
+        <div class="upload-icon">📑</div>
+        <div class="upload-label"><strong>クリックまたはドラッグ&ドロップ</strong>でファイルを選択</div>
+        <div class="upload-hint">対応形式: Excel / CSV / PDF｜タイムカードがない従業員に使用</div>
+      </div>
+      <div class="file-list" id="contractFileList"></div>
+      <div class="info-box">
+        <strong>必要な列:</strong> 社員番号 / 氏名、所定始業時刻、所定終業時刻、勤務曜日（任意）<br>
+        タイムカードがない従業員の視聴ログは、この所定勤務時間で判定します。
+      </div>
+    </div>
+
+    <!-- 送信ボタン -->
+    <div class="card">
+      <div class="card-title">📊 凡例（出力レポートの色分け）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-color" style="background:#FFFFFF"></div>OK（勤務時間内）</div>
+        <div class="legend-item"><div class="legend-color" style="background:#E2EFDA"></div>契約時間内（タイムカードなし）</div>
+        <div class="legend-item"><div class="legend-color" style="background:#FFEB9C"></div>勤務時間外視聴</div>
+        <div class="legend-item"><div class="legend-color" style="background:#FFD966"></div>契約時間外視聴</div>
+        <div class="legend-item"><div class="legend-color" style="background:#FCE4D6"></div>出勤記録なし</div>
+        <div class="legend-item"><div class="legend-color" style="background:#FF6B6B"></div>人物不一致（要確認）</div>
+      </div>
+      <hr>
+      <button type="submit" class="submit-btn" id="submitBtn">
+        ⚡ 照合を実行してレポートをダウンロード
+      </button>
+    </div>
+
+  </form>
+
+  <!-- 処理中 -->
+  <div class="progress-area" id="progressArea">
+    <div class="spinner"></div>
+    <p>照合処理中... しばらくお待ちください</p>
+  </div>
+
+  <!-- 結果 -->
+  <div class="result-area" id="resultArea">
+    <div class="card">
+      <div class="card-title">✅ 照合完了</div>
+      <div id="resultMessages"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ファイル管理
+const fileStores = {
+  video: new DataTransfer(),
+  attendance: new DataTransfer(),
+  contracts: new DataTransfer(),
+};
+
+function setupDropArea(dropAreaId, inputId, storeKey, listId) {
+  const area = document.getElementById(dropAreaId);
+  const input = document.getElementById(inputId);
+
+  area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('dragover'); });
+  area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+  area.addEventListener('drop', e => {
+    e.preventDefault();
+    area.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files, storeKey, listId, input);
+  });
+
+  input.addEventListener('change', () => {
+    handleFiles(input.files, storeKey, listId, input);
+    input.value = '';
+  });
+}
+
+function handleFiles(files, storeKey, listId, input) {
+  const store = fileStores[storeKey];
+  for (const file of files) {
+    // 重複チェック
+    let dup = false;
+    for (const f of store.files) {
+      if (f.name === file.name && f.size === file.size) { dup = true; break; }
+    }
+    if (!dup) store.items.add(file);
+  }
+  updateFileList(storeKey, listId, input);
+}
+
+function updateFileList(storeKey, listId, input) {
+  const store = fileStores[storeKey];
+  const list = document.getElementById(listId);
+  list.innerHTML = '';
+  for (let i = 0; i < store.files.length; i++) {
+    const f = store.files[i];
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    item.innerHTML = `
+      <span>📄</span>
+      <span>${f.name}</span>
+      <span style="color:#888;font-size:0.75rem">${(f.size/1024).toFixed(1)} KB</span>
+      <button class="remove-btn" onclick="removeFile('${storeKey}','${listId}',${i},this.closest('form').querySelector('#${input.id}'))">✕</button>
+    `;
+    list.appendChild(item);
+  }
+  // inputのfilesを更新
+  input.files = store.files;
+}
+
+function removeFile(storeKey, listId, index, input) {
+  const store = fileStores[storeKey];
+  const newDT = new DataTransfer();
+  for (let i = 0; i < store.files.length; i++) {
+    if (i !== index) newDT.items.add(store.files[i]);
+  }
+  fileStores[storeKey] = newDT;
+  updateFileList(storeKey, listId, input);
+}
+
+setupDropArea('videoDropArea', 'videoLogInput', 'video', 'videoFileList');
+setupDropArea('attendanceDropArea', 'attendanceInput', 'attendance', 'attendanceFileList');
+setupDropArea('contractDropArea', 'contractInput', 'contracts', 'contractFileList');
+
+// フォーム送信
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+
+  if (fileStores.video.files.length === 0) {
+    alert('動画ログファイルを選択してください');
+    return;
+  }
+
+  const formData = new FormData();
+
+  // 動画ログ
+  formData.append('video_log', fileStores.video.files[0]);
+
+  // 出勤記録
+  for (const f of fileStores.attendance.files) formData.append('attendance', f);
+
+  // 雇用契約書
+  for (const f of fileStores.contracts.files) formData.append('contracts', f);
+
+  // UI切り替え
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('progressArea').style.display = 'block';
+  document.getElementById('resultArea').style.display = 'none';
+
+  try {
+    const res = await fetch('/process', { method: 'POST', body: formData });
+
+    document.getElementById('progressArea').style.display = 'none';
+    document.getElementById('resultArea').style.display = 'block';
+    const msgArea = document.getElementById('resultMessages');
+    msgArea.innerHTML = '';
+
+    if (res.ok) {
+      const total = res.headers.get('X-Summary-Total') || '?';
+      const alerts = res.headers.get('X-Summary-Alerts') || '0';
+      const warningsStr = res.headers.get('X-Warnings') || '';
+
+      // 成功メッセージ
+      msgArea.innerHTML += `
+        <div class="alert alert-success">
+          ✅ 照合完了！ 動画ログ <strong>${total}</strong> 件を処理しました。
+          アラートあり: <strong>${alerts}</strong> 件
+        </div>`;
+
+      if (warningsStr) {
+        for (const w of warningsStr.split('|')) {
+          if (w) msgArea.innerHTML += `<div class="alert alert-warning">⚠ ${w}</div>`;
+        }
+      }
+
+      // ダウンロード
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const cd = res.headers.get('Content-Disposition') || '';
+      const fnMatch = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+      a.download = fnMatch ? decodeURIComponent(fnMatch[1].replace(/"/g,'')) : '照合結果.xlsx';
+      a.href = url;
+      a.className = 'download-btn';
+      a.innerHTML = '⬇ Excelレポートをダウンロード';
+      msgArea.appendChild(a);
+      a.click();
+
+    } else {
+      const data = await res.json().catch(() => ({ error: 'サーバーエラー' }));
+      msgArea.innerHTML = `<div class="alert alert-error">❌ エラー: ${data.error || '不明なエラー'}</div>`;
+    }
+  } catch (err) {
+    document.getElementById('progressArea').style.display = 'none';
+    document.getElementById('resultArea').style.display = 'block';
+    document.getElementById('resultMessages').innerHTML =
+      `<div class="alert alert-error">❌ 通信エラー: ${err.message}</div>`;
+  } finally {
+    document.getElementById('submitBtn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>

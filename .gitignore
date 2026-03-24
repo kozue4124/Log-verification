@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+.venv/
+venv/
+env/
+
+# 環境変数（絶対にコミットしない）
+.env
+.env.*
+*.env
+
+# サンプル・テストデータ（個人情報を含む可能性）
+sample_data/
+*.xlsx
+*.csv
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# エディタ
+.vscode/
+.idea/
+
+# Claude
+.claude/

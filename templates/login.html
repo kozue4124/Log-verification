@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ログイン – 動画ログ照合システム</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    background: #F0F4F8;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    padding: 48px 40px 40px;
+    width: 100%;
+    max-width: 400px;
+  }
+  .logo {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .logo h1 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #2D6A9F;
+    margin-top: 8px;
+  }
+  .logo p { font-size: 0.8rem; color: #6B7280; margin-top: 4px; }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 6px;
+  }
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid #D1D5DB;
+    border-radius: 8px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-bottom: 18px;
+  }
+  input:focus { border-color: #2D6A9F; }
+  .btn {
+    width: 100%;
+    padding: 13px;
+    background: #2D6A9F;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 4px;
+  }
+  .btn:hover { background: #1E5080; }
+  .error {
+    background: #FFF0F0;
+    color: #C00000;
+    border: 1px solid #FCA5A5;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    margin-bottom: 18px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div style="font-size:2.5rem">📊</div>
+    <h1>動画ログ照合システム</h1>
+    <p>社内専用 – ログインが必要です</p>
+  </div>
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+  <form method="post">
+    <label for="username">ユーザー名</label>
+    <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">パスワード</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+    <button type="submit" class="btn">ログイン</button>
+  </form>
+</div>
+</body>
+</html>

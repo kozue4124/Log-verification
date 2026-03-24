@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: video-log-checker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --timeout 120
+    plan: free
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true        # Renderが自動生成
+      - key: APP_USERNAME
+        value: admin               # ← 必要に応じて変更
+      - key: APP_PASSWORD
+        sync: false                # ← Renderダッシュボードで手動設定（シークレット）
+      - key: FLASK_ENV
+        value: production
