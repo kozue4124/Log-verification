@@ -340,11 +340,11 @@
 </div>
 
 <script>
-// ファイル管理
+// ファイル管理（配列ベース：全ブラウザ対応）
 const fileStores = {
-  video: new DataTransfer(),
-  attendance: new DataTransfer(),
-  contracts: new DataTransfer(),
+  video:      { files: [] },
+  attendance: { files: [] },
+  contracts:  { files: [] },
 };
 
 function setupDropArea(dropAreaId, inputId, storeKey, listId) {
@@ -373,7 +373,7 @@ function handleFiles(files, storeKey, listId, input) {
     for (const f of store.files) {
       if (f.name === file.name && f.size === file.size) { dup = true; break; }
     }
-    if (!dup) store.items.add(file);
+    if (!dup) store.files.push(file);
   }
   updateFileList(storeKey, listId, input);
 }
@@ -394,17 +394,10 @@ function updateFileList(storeKey, listId, input) {
     `;
     list.appendChild(item);
   }
-  // inputのfilesを更新
-  input.files = store.files;
 }
 
 function removeFile(storeKey, listId, index, input) {
-  const store = fileStores[storeKey];
-  const newDT = new DataTransfer();
-  for (let i = 0; i < store.files.length; i++) {
-    if (i !== index) newDT.items.add(store.files[i]);
-  }
-  fileStores[storeKey] = newDT;
+  fileStores[storeKey].files.splice(index, 1);
   updateFileList(storeKey, listId, input);
 }
 
