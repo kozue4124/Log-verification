@@ -2,12 +2,16 @@
 import os
 import tempfile
 import traceback
-from datetime import datetime
+import uuid
+from datetime import datetime, date, time
 from functools import wraps
 from pathlib import Path
 from flask import (Flask, render_template, request, send_file,
                    jsonify, redirect, url_for, session)
 import io
+
+# 生成済みExcelの一時キャッシュ {key: bytes}
+_report_cache: dict[str, bytes] = {}
 
 from processors.video_log import load_video_log
 from processors.attendance import load_attendance
@@ -135,19 +139,17 @@ def process():
         summary = generate_summary(results)
         report_bytes = generate_report(results)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"動画ログ照合結果_{timestamp}.xlsx"
+        # Excelをキャッシュに保存してキーを発行
+        dl_key = str(uuid.uuid4())
+        _report_cache[dl_key] = report_bytes
 
-        response = send_file(
-            io.BytesIO(report_bytes),
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            as_attachment=True,
-            download_name=filename,
-        )
-        response.headers["X-Summary-Total"] = str(summary["total"])
-        response.headers["X-Summary-Alerts"] = str(summary["alert_count"])
-        response.headers["X-Warnings"] = "|".join(warnings) if warnings else ""
-        return response
+        return jsonify({
+            "success": True,
+            "summary": summary,
+            "results": _serialize_results(results),
+            "download_key": dl_key,
+            "warnings": warnings,
+        })
 
     except Exception as e:
         traceback.print_exc()
@@ -184,6 +186,42 @@ def preview():
         return jsonify({"error": str(e)}), 400
     finally:
         _cleanup(tmp_path)
+
+
+@app.route("/download/<key>")
+@login_required
+def download(key):
+    report_bytes = _report_cache.pop(key, None)
+    if not report_bytes:
+        return "レポートが見つかりません（期限切れまたは無効なキーです）", 404
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"動画ログ照合結果_{timestamp}.xlsx"
+    return send_file(
+        io.BytesIO(report_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+def _serialize_results(results: list) -> list:
+    """date/time オブジェクトを文字列に変換してJSONシリアライズ可能にする"""
+    out = []
+    for r in results:
+        item = {}
+        for k, v in r.items():
+            if k in ("matched_attendance", "matched_contract"):
+                continue
+            elif isinstance(v, datetime):
+                item[k] = v.isoformat()
+            elif isinstance(v, date):
+                item[k] = v.strftime("%Y-%m-%d")
+            elif isinstance(v, time):
+                item[k] = v.strftime("%H:%M")
+            else:
+                item[k] = v
+        out.append(item)
+    return out
 
 
 def _allowed_file(filename: str) -> bool:

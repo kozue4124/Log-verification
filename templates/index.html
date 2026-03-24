@@ -235,6 +235,60 @@
   }
 
   hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  /* フィルターボタン */
+  .filter-btn {
+    padding: 5px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    background: white;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: #374151;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+  /* 結果テーブル行 */
+  #resultsBody tr { border-bottom: 1px solid #F3F4F6; transition: background 0.1s; }
+  #resultsBody tr:hover { background: #F8FAFC !important; }
+  #resultsBody td { padding: 10px 14px; vertical-align: top; line-height: 1.5; }
+
+  /* ステータスバッジ */
+  .status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .status-ok        { background: #D1FAE5; color: #065F46; }
+  .status-outside   { background: #FEF3C7; color: #92400E; }
+  .status-noatt     { background: #FFE4CC; color: #7C2D12; }
+  .status-mismatch  { background: #FEE2E2; color: #991B1B; }
+  .status-contract  { background: #ECFCCB; color: #365314; }
+  .status-coutside  { background: #FEF9C3; color: #713F12; }
+  .status-notime    { background: #F3F4F6; color: #4B5563; }
+
+  /* アラートテキスト */
+  .alert-text { font-size: 0.8rem; color: #6B7280; line-height: 1.6; }
+  .alert-text .alert-line { display: block; }
+  .alert-text .alert-line.danger { color: #991B1B; }
+  .alert-text .alert-line.warn   { color: #92400E; }
+
+  /* サマリーカードチップ */
+  .sum-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 20px;
+    font-size: 0.82rem; font-weight: 700;
+    background: rgba(255,255,255,0.15); color: white;
+  }
+  .sum-chip.danger { background: rgba(220,38,38,0.85); }
+  .sum-chip.warn   { background: rgba(217,119,6,0.85); }
+  .sum-chip.ok     { background: rgba(5,150,105,0.85); }
 </style>
 </head>
 <body>
@@ -329,14 +383,62 @@
     <p>照合処理中... しばらくお待ちください</p>
   </div>
 
-  <!-- 結果 -->
-  <div class="result-area" id="resultArea">
-    <div class="card">
-      <div class="card-title">✅ 照合完了</div>
-      <div id="resultMessages"></div>
+</div>
+
+<!-- 結果エリア（フォームの外・全幅） -->
+<div id="resultArea" style="display:none; padding: 0 0 48px;">
+
+  <!-- サマリーカード -->
+  <div id="summaryBar" style="background:#2D6A9F; padding:20px 32px; margin-bottom:24px;">
+    <div style="max-width:1200px; margin:0 auto; display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+      <span style="color:white; font-weight:700; font-size:1rem; margin-right:8px;">✅ 照合完了</span>
+      <div id="summaryCards" style="display:flex; flex-wrap:wrap; gap:8px; flex:1;"></div>
+      <a id="downloadBtn" href="#" style="
+        display:inline-block; background:white; color:#2D6A9F;
+        font-weight:700; font-size:0.9rem; padding:10px 20px;
+        border-radius:8px; text-decoration:none; white-space:nowrap;
+        box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+        ⬇ Excelをダウンロード
+      </a>
     </div>
   </div>
 
+  <div style="max-width:1200px; margin:0 auto; padding:0 16px;">
+
+    <!-- 警告メッセージ -->
+    <div id="warnMessages"></div>
+
+    <!-- フィルターバー -->
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; align-items:center;">
+      <span style="font-size:0.85rem; color:#6B7280; font-weight:600;">フィルター：</span>
+      <button class="filter-btn active" data-filter="all" onclick="applyFilter('all', this)">すべて</button>
+      <button class="filter-btn" data-filter="alert" onclick="applyFilter('alert', this)">🚨 要確認のみ</button>
+      <button class="filter-btn" data-filter="OK" onclick="applyFilter('OK', this)">✅ OK</button>
+      <button class="filter-btn" data-filter="勤務時間外" onclick="applyFilter('勤務時間外', this)">⚠ 勤務時間外</button>
+      <button class="filter-btn" data-filter="人物不一致" onclick="applyFilter('人物不一致', this)">🚨 人物不一致</button>
+      <button class="filter-btn" data-filter="出勤記録なし" onclick="applyFilter('出勤記録なし', this)">📋 出勤記録なし</button>
+      <span id="filterCount" style="margin-left:auto; font-size:0.82rem; color:#6B7280;"></span>
+    </div>
+
+    <!-- 結果テーブル -->
+    <div style="overflow-x:auto; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+      <table id="resultsTable" style="width:100%; border-collapse:collapse; background:white; font-size:0.88rem;">
+        <thead>
+          <tr style="background:#F8FAFC; border-bottom:2px solid #E5E7EB;">
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700; white-space:nowrap;">社員番号</th>
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700; white-space:nowrap;">氏名</th>
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700; white-space:nowrap;">日付</th>
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700; white-space:nowrap;">視聴開始</th>
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700; white-space:nowrap;">視聴終了</th>
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700;">動画タイトル</th>
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700; white-space:nowrap;">ステータス</th>
+            <th style="padding:12px 14px; text-align:left; color:#374151; font-weight:700;">アラート詳細</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -405,7 +507,7 @@ setupDropArea('videoDropArea', 'videoLogInput', 'video', 'videoFileList');
 setupDropArea('attendanceDropArea', 'attendanceInput', 'attendance', 'attendanceFileList');
 setupDropArea('contractDropArea', 'contractInput', 'contracts', 'contractFileList');
 
-// フォーム送信
+// ---- フォーム送信 ----
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
 
@@ -415,73 +517,139 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   }
 
   const formData = new FormData();
-
-  // 動画ログ
   formData.append('video_log', fileStores.video.files[0]);
-
-  // 出勤記録
   for (const f of fileStores.attendance.files) formData.append('attendance', f);
+  for (const f of fileStores.contracts.files)  formData.append('contracts', f);
 
-  // 雇用契約書
-  for (const f of fileStores.contracts.files) formData.append('contracts', f);
-
-  // UI切り替え
   document.getElementById('submitBtn').disabled = true;
   document.getElementById('progressArea').style.display = 'block';
   document.getElementById('resultArea').style.display = 'none';
 
   try {
     const res = await fetch('/process', { method: 'POST', body: formData });
-
     document.getElementById('progressArea').style.display = 'none';
-    document.getElementById('resultArea').style.display = 'block';
-    const msgArea = document.getElementById('resultMessages');
-    msgArea.innerHTML = '';
 
     if (res.ok) {
-      const total = res.headers.get('X-Summary-Total') || '?';
-      const alerts = res.headers.get('X-Summary-Alerts') || '0';
-      const warningsStr = res.headers.get('X-Warnings') || '';
-
-      // 成功メッセージ
-      msgArea.innerHTML += `
-        <div class="alert alert-success">
-          ✅ 照合完了！ 動画ログ <strong>${total}</strong> 件を処理しました。
-          アラートあり: <strong>${alerts}</strong> 件
-        </div>`;
-
-      if (warningsStr) {
-        for (const w of warningsStr.split('|')) {
-          if (w) msgArea.innerHTML += `<div class="alert alert-warning">⚠ ${w}</div>`;
-        }
-      }
-
-      // ダウンロード
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const cd = res.headers.get('Content-Disposition') || '';
-      const fnMatch = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
-      a.download = fnMatch ? decodeURIComponent(fnMatch[1].replace(/"/g,'')) : '照合結果.xlsx';
-      a.href = url;
-      a.className = 'download-btn';
-      a.innerHTML = '⬇ Excelレポートをダウンロード';
-      msgArea.appendChild(a);
-      a.click();
-
+      const data = await res.json();
+      renderResults(data);
+      // 結果エリアまでスクロール
+      document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
     } else {
       const data = await res.json().catch(() => ({ error: 'サーバーエラー' }));
-      msgArea.innerHTML = `<div class="alert alert-error">❌ エラー: ${data.error || '不明なエラー'}</div>`;
+      alert('❌ エラー: ' + (data.error || '不明なエラー'));
     }
   } catch (err) {
     document.getElementById('progressArea').style.display = 'none';
-    document.getElementById('resultArea').style.display = 'block';
-    document.getElementById('resultMessages').innerHTML =
-      `<div class="alert alert-error">❌ 通信エラー: ${err.message}</div>`;
+    alert('❌ 通信エラー: ' + err.message);
   } finally {
     document.getElementById('submitBtn').disabled = false;
   }
 });
+
+// ---- 結果レンダリング ----
+let _allResults = [];
+
+function renderResults(data) {
+  _allResults = data.results || [];
+  const s = data.summary || {};
+
+  // サマリーチップ
+  const chips = [
+    { label: '全件',         val: s.total,           cls: '' },
+    { label: '✅ OK',        val: s.ok,              cls: 'ok' },
+    { label: '⚠ 勤務時間外', val: s.outside_hours,   cls: 'warn' },
+    { label: '⚠ 契約時間外', val: s.contract_outside, cls: 'warn' },
+    { label: '🚨 人物不一致', val: s.person_mismatch,  cls: 'danger' },
+    { label: '📋 出勤記録なし',val: s.no_attendance,   cls: '' },
+  ].filter(c => c.val > 0);
+
+  document.getElementById('summaryCards').innerHTML =
+    chips.map(c => `<span class="sum-chip ${c.cls}">${c.label} <strong>${c.val}</strong></span>`).join('');
+
+  // ダウンロードボタン
+  document.getElementById('downloadBtn').href = '/download/' + data.download_key;
+
+  // 警告
+  const warnEl = document.getElementById('warnMessages');
+  warnEl.innerHTML = (data.warnings || []).map(w =>
+    `<div class="alert alert-warning" style="margin-bottom:8px;">⚠ ${w}</div>`
+  ).join('');
+
+  document.getElementById('resultArea').style.display = 'block';
+  applyFilter('all', document.querySelector('.filter-btn[data-filter="all"]'));
+}
+
+// ---- フィルター ----
+function applyFilter(filter, btn) {
+  // ボタンのアクティブ状態
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const STATUS_MAP = {
+    '勤務時間外': ['勤務時間外', '契約時間外'],
+    '出勤記録なし': ['出勤記録なし', '契約時間参照', '時刻情報なし'],
+  };
+
+  const filtered = _allResults.filter(r => {
+    if (filter === 'all')   return true;
+    if (filter === 'alert') return r.alerts && r.alerts.length > 0;
+    const targets = STATUS_MAP[filter] || [filter];
+    return targets.includes(r.status);
+  });
+
+  document.getElementById('filterCount').textContent = `${filtered.length} 件表示中`;
+  renderTable(filtered);
+}
+
+// ---- テーブル描画 ----
+const STATUS_STYLE = {
+  'OK':         ['status-ok',       '✅ OK'],
+  '勤務時間外': ['status-outside',  '⚠ 勤務時間外'],
+  '出勤記録なし':['status-noatt',   '📋 出勤記録なし'],
+  '人物不一致': ['status-mismatch', '🚨 人物不一致'],
+  '契約時間参照':['status-contract', 'ℹ 契約時間参照'],
+  '契約時間外': ['status-coutside', '⚠ 契約時間外'],
+  '時刻情報なし':['status-notime',  '— 時刻情報なし'],
+};
+
+function renderTable(rows) {
+  const tbody = document.getElementById('resultsBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:#9CA3AF;">該当するデータがありません</td></tr>';
+    return;
+  }
+
+  const ROW_BG = {
+    '人物不一致': '#FFF5F5',
+    '勤務時間外': '#FFFBEB',
+    '契約時間外': '#FFFDE7',
+    '出勤記録なし':'#FFF7ED',
+  };
+
+  tbody.innerHTML = rows.map(r => {
+    const [cls, label] = STATUS_STYLE[r.status] || ['status-notime', r.status];
+    const bg = ROW_BG[r.status] || 'white';
+    const alertHtml = (r.alerts || []).map(a => {
+      const lineClass = a.startsWith('🚨') ? 'danger' : a.startsWith('⚠') ? 'warn' : '';
+      return `<span class="alert-line ${lineClass}">${escHtml(a)}</span>`;
+    }).join('');
+
+    return `<tr style="background:${bg}">
+      <td style="color:#6B7280;">${escHtml(r.employee_id || '—')}</td>
+      <td style="font-weight:600;">${escHtml(r.employee_name || '—')}</td>
+      <td style="white-space:nowrap;">${escHtml(r.date || '—')}</td>
+      <td style="white-space:nowrap;">${escHtml(r.start_time || '—')}</td>
+      <td style="white-space:nowrap;">${escHtml(r.end_time || '—')}</td>
+      <td style="max-width:220px;">${escHtml(r.video_title || r.title || '—')}</td>
+      <td><span class="status-badge ${cls}">${label}</span></td>
+      <td><div class="alert-text">${alertHtml || '<span style="color:#D1D5DB;">—</span>'}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 </script>
 </body>
 </html>
