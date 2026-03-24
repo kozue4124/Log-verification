@@ -279,6 +279,21 @@
   .alert-text .alert-line.danger { color: #991B1B; }
   .alert-text .alert-line.warn   { color: #92400E; }
 
+  /* 人物不一致：名前比較カード */
+  .mismatch-card {
+    display: inline-flex; flex-direction: column; gap: 4px;
+    background: #FEE2E2; border: 1px solid #FECACA;
+    border-radius: 8px; padding: 7px 10px;
+  }
+  .mismatch-row { display: flex; align-items: center; gap: 6px; }
+  .mismatch-label {
+    font-size: 0.7rem; font-weight: 700;
+    padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+  }
+  .mismatch-label.log { background: #DBEAFE; color: #1E40AF; }
+  .mismatch-label.att { background: #FCE7F3; color: #9D174D; }
+  .mismatch-name { font-weight: 700; font-size: 0.85rem; color: #991B1B; }
+
   /* サマリーカードチップ */
   .sum-chip {
     display: inline-flex; align-items: center; gap: 6px;
@@ -371,7 +386,7 @@
       </div>
       <hr>
       <button type="submit" class="submit-btn" id="submitBtn">
-        ⚡ 照合を実行してレポートをダウンロード
+        🔍 照合する
       </button>
     </div>
 
@@ -620,21 +635,33 @@ function renderTable(rows) {
   }
 
   const ROW_BG = {
-    '人物不一致': '#FFF5F5',
+    '人物不一致': '#FEF2F2',
     '勤務時間外': '#FFFBEB',
     '契約時間外': '#FFFDE7',
     '出勤記録なし':'#FFF7ED',
   };
+  const ROW_BORDER = {
+    '人物不一致': 'border-left: 4px solid #DC2626;',
+  };
 
   tbody.innerHTML = rows.map(r => {
     const [cls, label] = STATUS_STYLE[r.status] || ['status-notime', r.status];
-    const bg = ROW_BG[r.status] || 'white';
-    const alertHtml = (r.alerts || []).map(a => {
-      const lineClass = a.startsWith('🚨') ? 'danger' : a.startsWith('⚠') ? 'warn' : '';
-      return `<span class="alert-line ${lineClass}">${escHtml(a)}</span>`;
-    }).join('');
+    const bg  = ROW_BG[r.status] || 'white';
+    const bdr = ROW_BORDER[r.status] || '';
+    const isMismatch = r.status === '人物不一致';
 
-    return `<tr style="background:${bg}">
+    // アラート列：人物不一致は名前比較カードを生成
+    let alertHtml;
+    if (isMismatch) {
+      alertHtml = buildMismatchCard(r);
+    } else {
+      alertHtml = (r.alerts || []).map(a => {
+        const lineClass = a.startsWith('🚨') ? 'danger' : a.startsWith('⚠') ? 'warn' : '';
+        return `<span class="alert-line ${lineClass}">${escHtml(a)}</span>`;
+      }).join('') || '<span style="color:#D1D5DB;">—</span>';
+    }
+
+    return `<tr style="background:${bg}; ${bdr}">
       <td style="color:#6B7280;">${escHtml(r.employee_id || '—')}</td>
       <td style="font-weight:600;">${escHtml(r.employee_name || '—')}</td>
       <td style="white-space:nowrap;">${escHtml(r.date || '—')}</td>
@@ -642,9 +669,30 @@ function renderTable(rows) {
       <td style="white-space:nowrap;">${escHtml(r.end_time || '—')}</td>
       <td style="max-width:220px;">${escHtml(r.video_title || r.title || '—')}</td>
       <td><span class="status-badge ${cls}">${label}</span></td>
-      <td><div class="alert-text">${alertHtml || '<span style="color:#D1D5DB;">—</span>'}</div></td>
+      <td><div class="alert-text">${alertHtml}</div></td>
     </tr>`;
   }).join('');
+}
+
+// 人物不一致の名前比較カードを生成
+function buildMismatchCard(r) {
+  // アラートメッセージから「名前A」と「名前B」を抽出
+  const alerts = r.alerts || [];
+  let nameLog = '', nameAtt = '';
+  for (const a of alerts) {
+    // パターン1: 動画ログ「X」と出勤記録「Y」
+    const m1 = a.match(/動画ログ[「"](.+?)[」"].*出勤記録[「"](.+?)[」"]/);
+    if (m1) { nameLog = m1[1]; nameAtt = m1[2]; break; }
+    // パターン2: 動画ログ「X」が出勤記録「Y」
+    const m2 = a.match(/動画ログ[「"](.+?)[」"].*[「"](.+?)[」"]/);
+    if (m2) { nameLog = m2[1]; nameAtt = m2[2]; break; }
+  }
+
+  const logPart  = nameLog ? `<div class="mismatch-row"><span class="mismatch-label log">動画ログ</span><span class="mismatch-name">${escHtml(nameLog)}</span></div>` : '';
+  const attPart  = nameAtt ? `<div class="mismatch-row"><span class="mismatch-label att">出勤記録</span><span class="mismatch-name">${escHtml(nameAtt)}</span></div>` : '';
+  const fallback = (!nameLog && !nameAtt) ? `<span class="alert-line danger">${escHtml(alerts[0] || '人物不一致')}</span>` : '';
+
+  return `<div class="mismatch-card">${logPart}${attPart}${fallback}</div>`;
 }
 
 function escHtml(s) {
