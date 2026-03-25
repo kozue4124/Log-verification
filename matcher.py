@@ -242,37 +242,26 @@ def match_records(
         # 出勤記録を検索
         att_records, _ = _find_attendance(video, att_lookup, attendance)
 
-        # 人物不一致チェック: IDが一致するのに氏名が大きく異なる場合
         if att_records:
-            v_id = _normalize_id(video.get("employee_id") or "")
-            v_name = video.get("employee_name") or ""
-            for ar in att_records:
-                ar_id = _normalize_id(ar.get("employee_id") or "")
-                ar_name = ar.get("employee_name") or ""
-                # 同一IDで名前が異なる
-                if v_id and ar_id and v_id == ar_id and v_name and ar_name:
-                    if _name_similarity(v_name, ar_name) < 0.6:
-                        result["status"] = STATUS_PERSON_MISMATCH
-                        result["alerts"].append(
-                            f"🚨 人物不一致: 社員番号 {video.get('employee_id')} の氏名が"
-                            f"動画ログ「{v_name}」と出勤記録「{ar_name}」で異なります"
-                        )
-                        break
-                # IDがなく名前だけで照合した場合に名前が合わない（別人）
-                elif not v_id and not ar_id and v_name and ar_name:
-                    if _name_similarity(v_name, ar_name) < name_threshold:
-                        result["status"] = STATUS_PERSON_MISMATCH
-                        result["alerts"].append(
-                            f"🚨 人物不一致: 動画ログ「{v_name}」が出勤記録「{ar_name}」と一致しません"
-                        )
-                        break
-
-        if att_records:
-            # 出勤記録がある場合（人物不一致でも時間チェックを実施）
             result["matched_attendance"] = att_records
+            v_name_raw = video.get("employee_name") or ""
+            ar_name_raw = att_records[0].get("employee_name") or ""
 
-            # 勤務時間チェック（人物不一致の場合はステータス上書きしない）
-            if result["status"] != STATUS_PERSON_MISMATCH:
+            # ---- ステップ１: 人物確認（名前照合を最優先）----
+            same_person = (
+                not v_name_raw
+                or not ar_name_raw
+                or _name_similarity(_normalize_name(v_name_raw), _normalize_name(ar_name_raw)) >= 0.6
+            )
+
+            if not same_person:
+                # ステップ２: 別人物 → アラートのみ・時間照合はスキップ
+                result["status"] = STATUS_PERSON_MISMATCH
+                result["alerts"].append(
+                    f"🚨 人物不一致: 動画ログ「{v_name_raw}」/ 出勤記録「{ar_name_raw}」"
+                )
+            else:
+                # ステップ３: 同一人物 → 時間照合
                 in_hours = False
                 for ar in att_records:
                     clock_in = ar.get("clock_in")
