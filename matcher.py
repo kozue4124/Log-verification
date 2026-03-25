@@ -263,23 +263,52 @@ def match_records(
             else:
                 # ステップ３: 同一人物 → 時間照合
                 in_hours = False
-                for ar in att_records:
-                    clock_in = ar.get("clock_in")
-                    clock_out = ar.get("clock_out")
-                    if clock_in and clock_out and view_start:
-                        if _time_within(view_start, view_end, clock_in, clock_out):
+                valid_records = [ar for ar in att_records
+                                 if ar.get("clock_in") and ar.get("clock_out")]
+
+                if valid_records:
+                    # 打刻データあり → 時間内かチェック
+                    for ar in valid_records:
+                        if view_start and _time_within(
+                                view_start, view_end,
+                                ar["clock_in"], ar["clock_out"]):
                             in_hours = True
                             break
 
-                if not in_hours and view_start:
-                    best_ar = att_records[0]
-                    ci = best_ar.get("clock_in")
-                    co = best_ar.get("clock_out")
-                    result["status"] = STATUS_OUTSIDE_HOURS
-                    result["alerts"].append(
-                        f"⚠ 勤務時間外視聴: 視聴 {_fmt_time(view_start)}〜{_fmt_time(view_end)} / "
-                        f"勤務 {_fmt_time(ci)}〜{_fmt_time(co)}"
-                    )
+                    if not in_hours and view_start:
+                        best_ar = valid_records[0]
+                        result["status"] = STATUS_OUTSIDE_HOURS
+                        result["alerts"].append(
+                            f"⚠ 勤務時間外視聴: "
+                            f"視聴 {_fmt_time(view_start)}〜{_fmt_time(view_end)} / "
+                            f"勤務 {_fmt_time(best_ar['clock_in'])}〜{_fmt_time(best_ar['clock_out'])}"
+                        )
+                else:
+                    # 打刻データなし（休日・未入力）→ 雇用契約書で補完
+                    contract = _find_contract(video, contract_lookup)
+                    if contract:
+                        result["matched_contract"] = contract
+                        work_start = contract.get("work_start")
+                        work_end = contract.get("work_end")
+                        if work_start and work_end and view_start:
+                            if _time_within(view_start, view_end, work_start, work_end):
+                                result["status"] = STATUS_CONTRACT_ONLY
+                                result["alerts"].append(
+                                    "ℹ タイムカード打刻なし（雇用契約の所定勤務時間内と判断）"
+                                )
+                            else:
+                                result["status"] = STATUS_CONTRACT_OUTSIDE
+                                result["alerts"].append(
+                                    f"⚠ 契約時間外視聴: "
+                                    f"視聴 {_fmt_time(view_start)}〜{_fmt_time(view_end)} / "
+                                    f"所定 {_fmt_time(work_start)}〜{_fmt_time(work_end)}"
+                                )
+                        else:
+                            result["status"] = STATUS_NO_ATTENDANCE
+                            result["alerts"].append("⚠ 打刻データなし（出勤記録に時刻が記録されていません）")
+                    else:
+                        result["status"] = STATUS_NO_ATTENDANCE
+                        result["alerts"].append("⚠ 打刻データなし（出勤記録に時刻が記録されていません）")
 
         else:
             # 出勤記録なし → 雇用契約書のデフォルト時間を参照
