@@ -134,26 +134,137 @@ def _load_csv(filepath: str) -> List[dict]:
     return _df_to_records(df)
 
 
+def _parse_kinmu_pdf(table: list, full_text: str) -> Optional[List[dict]]:
+    """
+    「月・日付・始業時刻・終業時刻」形式の出勤簿PDFをパース。
+    月列が途中から省略され、氏名・年月がフッターに記載される形式に対応。
+    """
+    # ヘッダー行を特定（「月」「日付」「始業時刻」が含まれる行）
+    header_idx = None
+    for i, row in enumerate(table):
+        cells = [str(c).strip() if c else "" for c in row]
+        if "日付" in cells and ("始業時刻" in cells or "終業時刻" in cells):
+            header_idx = i
+            break
+    if header_idx is None:
+        return None
+
+    header = [str(c).strip() if c else "" for c in table[header_idx]]
+
+    # 必要列のインデックスを取得
+    def col(names):
+        for n in names:
+            for i, h in enumerate(header):
+                if n in h:
+                    return i
+        return None
+
+    idx_month   = col(["月"])
+    idx_day     = col(["日付"])
+    idx_in      = col(["始業時刻"])
+    idx_out     = col(["終業時刻"])
+    idx_count   = col(["出勤日数"])
+
+    if idx_day is None or idx_in is None or idx_out is None:
+        return None
+
+    # 氏名をフッターテキストから抽出（「氏名 〇〇 〇〇」パターン）
+    emp_name = None
+    m = re.search(r"氏名\s*([^\s　]+\s*[^\s　]+)", full_text)
+    if m:
+        emp_name = re.sub(r"\s+", "", m.group(1)).strip()
+
+    # 年・月をフッターテキストから抽出（「2026年 3 月」など）
+    year, month = None, None
+    ym = re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月", full_text)
+    if ym:
+        year, month = int(ym.group(1)), int(ym.group(2))
+    if year is None:
+        from datetime import datetime
+        year = datetime.today().year
+
+    records = []
+    current_month = month  # フッターから取得した主月をデフォルトに
+    prev_month = None
+
+    for row in table[header_idx + 1:]:
+        cells = [str(c).strip() if c else "" for c in row]
+        if len(cells) <= max(filter(None, [idx_day, idx_in, idx_out])):
+            continue
+
+        # 月列の更新（空白は前行の月を引き継ぐ）
+        raw_month = cells[idx_month].strip() if idx_month is not None and idx_month < len(cells) else ""
+        if re.match(r"^\d+$", raw_month):
+            new_month = int(raw_month)
+            if new_month != prev_month:
+                current_month = new_month
+                prev_month = new_month
+
+        # 日付
+        raw_day = cells[idx_day] if idx_day < len(cells) else ""
+        if not re.match(r"^\d+$", raw_day):
+            continue  # 合計行・ヘッダー行をスキップ
+        day = int(raw_day)
+
+        # 出勤日数が 0 → 休み・欠勤（時刻なしでも記録として追加）
+        raw_count = cells[idx_count].strip() if idx_count is not None and idx_count < len(cells) else ""
+
+        # 時刻
+        raw_in  = cells[idx_in]  if idx_in  < len(cells) else ""
+        raw_out = cells[idx_out] if idx_out < len(cells) else ""
+        clock_in  = _parse_time(raw_in)
+        clock_out = _parse_time(raw_out)
+
+        # 年の推定（月が前月より小さくなったら翌年）
+        rec_year = year
+        if current_month and month and current_month < month - 1:
+            rec_year = year + 1
+
+        try:
+            from datetime import date as date_cls
+            d = date_cls(rec_year, current_month or month, day)
+        except (ValueError, TypeError):
+            continue
+
+        records.append({
+            "employee_id":   None,
+            "employee_name": emp_name,
+            "date":          d,
+            "clock_in":      clock_in,
+            "clock_out":     clock_out,
+        })
+
+    return records if records else None
+
+
 def _load_pdf(filepath: str) -> List[dict]:
     """PDFからテーブルを抽出して出勤記録を読み込む"""
     records = []
     try:
         with pdfplumber.open(filepath) as pdf:
             for page in pdf.pages:
+                full_text = page.extract_text() or ""
                 tables = page.extract_tables()
                 for table in tables:
                     if not table or len(table) < 2:
                         continue
-                    # 最初の行をヘッダーとして使用
+
+                    # まず専用パーサーを試みる（月+日付形式の出勤簿）
+                    kinmu = _parse_kinmu_pdf(table, full_text)
+                    if kinmu:
+                        records.extend(kinmu)
+                        continue
+
+                    # 汎用パーサー（標準的な列名が揃っている場合）
                     header = [str(h).strip() if h else "" for h in table[0]]
                     df = pd.DataFrame(table[1:], columns=header)
                     page_records = _df_to_records(df)
                     records.extend(page_records)
+
     except Exception as e:
         raise ValueError(f"PDFの読み込みに失敗: {e}")
 
     if not records:
-        # テキスト抽出にフォールバック（構造化されていないPDF）
         records = _parse_pdf_text(filepath)
 
     return records
