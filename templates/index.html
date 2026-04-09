@@ -313,7 +313,10 @@
     <h1>📊 動画ログ照合システム</h1>
     <p>研修動画の視聴ログと出勤記録を照合し、勤務時間外視聴をチェックします</p>
   </div>
-  <a href="/logout" style="margin-left:auto;color:rgba(255,255,255,0.8);font-size:0.85rem;text-decoration:none;padding:6px 14px;border:1px solid rgba(255,255,255,0.4);border-radius:6px;">ログアウト</a>
+  <nav style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+    <a href="/handwritten" style="color:rgba(255,255,255,0.9);font-size:0.85rem;text-decoration:none;padding:6px 14px;background:rgba(255,255,255,0.15);border-radius:6px;">✍️ 手書き勤怠→CSV</a>
+    <a href="/logout" style="color:rgba(255,255,255,0.8);font-size:0.85rem;text-decoration:none;padding:6px 14px;border:1px solid rgba(255,255,255,0.4);border-radius:6px;">ログアウト</a>
+  </nav>
 </header>
 
 <div class="container">
@@ -460,7 +463,7 @@
 // ファイル管理（配列ベース：全ブラウザ対応）
 const fileStores = {
   video:      { files: [] },
-  attendance: { files: [] },
+  attendance: { files: [], names: [] },
   contracts:  { files: [] },
 };
 
@@ -503,14 +506,43 @@ function updateFileList(storeKey, listId, input) {
     const f = store.files[i];
     const item = document.createElement('div');
     item.className = 'file-item';
-    item.innerHTML = `
-      <span>📄</span>
-      <span>${f.name}</span>
-      <span style="color:#888;font-size:0.75rem">${(f.size/1024).toFixed(1)} KB</span>
-      <button class="remove-btn" onclick="removeFile('${storeKey}','${listId}',${i},this.closest('form').querySelector('#${input.id}'))">✕</button>
-    `;
+
+    if (storeKey === 'attendance') {
+      // 出勤記録のみ：氏名入力欄を表示
+      const isPdf = f.name.toLowerCase().endsWith('.pdf');
+      item.style.flexWrap = 'wrap';
+      item.innerHTML = `
+        <span>📄</span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span>
+        <span style="color:#888;font-size:0.75rem">${(f.size/1024).toFixed(1)} KB</span>
+        <button class="remove-btn" onclick="removeAttendanceFile(${i},'${listId}','${input.id}')">✕</button>
+        <div style="width:100%;display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;">
+          <label style="font-size:0.78rem;color:#6B7280;white-space:nowrap;">氏名:</label>
+          <input type="text"
+            id="att_name_${i}"
+            placeholder="${isPdf ? '自動取得できない場合は入力（例: 山田あゆみ）' : '通常は自動取得'}"
+            value="${store.names[i] || ''}"
+            oninput="fileStores.attendance.names[${i}]=this.value"
+            style="flex:1;padding:4px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:0.82rem;outline:none;">
+        </div>
+      `;
+    } else {
+      item.innerHTML = `
+        <span>📄</span>
+        <span>${f.name}</span>
+        <span style="color:#888;font-size:0.75rem">${(f.size/1024).toFixed(1)} KB</span>
+        <button class="remove-btn" onclick="removeFile('${storeKey}','${listId}',${i},this.closest('form').querySelector('#${input.id}'))">✕</button>
+      `;
+    }
     list.appendChild(item);
   }
+}
+
+function removeAttendanceFile(index, listId, inputId) {
+  fileStores.attendance.files.splice(index, 1);
+  fileStores.attendance.names.splice(index, 1);
+  const input = document.getElementById(inputId);
+  updateFileList('attendance', listId, input);
 }
 
 function removeFile(storeKey, listId, index, input) {
@@ -533,8 +565,11 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
 
   const formData = new FormData();
   formData.append('video_log', fileStores.video.files[0]);
-  for (const f of fileStores.attendance.files) formData.append('attendance', f);
-  for (const f of fileStores.contracts.files)  formData.append('contracts', f);
+  for (let i = 0; i < fileStores.attendance.files.length; i++) {
+    formData.append('attendance', fileStores.attendance.files[i]);
+    formData.append('attendance_name', fileStores.attendance.names[i] || '');
+  }
+  for (const f of fileStores.contracts.files) formData.append('contracts', f);
 
   document.getElementById('submitBtn').disabled = true;
   document.getElementById('progressArea').style.display = 'block';

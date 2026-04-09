@@ -13,6 +13,9 @@ import io
 # 生成済みExcelの一時キャッシュ {key: bytes}
 _report_cache: dict[str, bytes] = {}
 
+# 手書き勤怠変換CSVの一時キャッシュ {key: (emp_name, csv_bytes)}
+_csv_cache: dict[str, tuple[str, bytes]] = {}
+
 from processors.video_log import load_video_log
 from processors.attendance import load_attendance
 from processors.contract import load_contracts
@@ -87,13 +90,16 @@ def process():
     video_tmp = _save_upload(video_file)
 
     # ---- 出勤記録（複数可）----
+    att_files   = request.files.getlist("attendance")
+    att_names   = request.form.getlist("attendance_name")  # 氏名オーバーライド
     attendance_tmps = []
-    for f in request.files.getlist("attendance"):
+    for i, f in enumerate(att_files):
         if f and f.filename:
             if not _allowed_file(f.filename):
                 warnings.append(f"出勤記録「{f.filename}」は非対応形式です")
                 continue
-            attendance_tmps.append((f.filename, _save_upload(f)))
+            name_override = att_names[i].strip() if i < len(att_names) else ""
+            attendance_tmps.append((f.filename, _save_upload(f), name_override))
 
     # ---- 雇用契約書（任意）----
     contract_tmps = []
@@ -114,9 +120,14 @@ def process():
             _cleanup(video_tmp)
 
         attendance_all = []
-        for fname, tmp_path in attendance_tmps:
+        for fname, tmp_path, name_override in attendance_tmps:
             try:
-                attendance_all.extend(load_attendance(tmp_path))
+                recs = load_attendance(tmp_path)
+                # 氏名オーバーライドが指定されていれば全レコードに適用
+                if name_override:
+                    for r in recs:
+                        r["employee_name"] = name_override
+                attendance_all.extend(recs)
             except Exception as e:
                 warnings.append(f"出勤記録「{fname}」の読み込みに失敗: {e}")
             finally:
@@ -186,6 +197,102 @@ def preview():
         return jsonify({"error": str(e)}), 400
     finally:
         _cleanup(tmp_path)
+
+
+@app.route("/handwritten")
+@login_required
+def handwritten():
+    """手書き勤怠簿 PDF → CSV 変換ページ"""
+    api_configured = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return render_template("handwritten.html", api_configured=api_configured)
+
+
+@app.route("/handwritten/convert", methods=["POST"])
+@login_required
+def handwritten_convert():
+    """手書き勤怠簿 PDF を Claude Vision で読み取り CSV を返す"""
+    import csv as _csv
+    from handwritten_attendance_to_csv import (
+        pdf_to_images, extract_with_claude, pages_to_records, CSV_FIELDNAMES
+    )
+
+    pdf_file = request.files.get("pdf")
+    if not pdf_file or pdf_file.filename == "":
+        return jsonify({"success": False, "error": "PDFファイルが選択されていません"}), 400
+    if Path(pdf_file.filename).suffix.lower() != ".pdf":
+        return jsonify({"success": False, "error": "PDFファイルのみ対応しています"}), 400
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return jsonify({
+            "success": False,
+            "error": "ANTHROPIC_API_KEY が設定されていません。管理者にお問い合わせください。"
+        }), 500
+
+    tmp_path = _save_upload(pdf_file)
+    try:
+        images = pdf_to_images(tmp_path)
+        if not images:
+            return jsonify({"success": False, "error": "PDFから画像を取得できませんでした"}), 400
+
+        pages_data = []
+        for i, img_bytes in enumerate(images, 1):
+            data = extract_with_claude(img_bytes, api_key)
+            pages_data.append(data)
+
+        emp_name, records = pages_to_records(pages_data)
+        if not records:
+            return jsonify({"success": False, "error": "勤務データが見つかりませんでした"}), 400
+
+        # CSVをメモリ上に生成
+        output = io.StringIO()
+        writer = _csv.DictWriter(output, fieldnames=CSV_FIELDNAMES)
+        writer.writeheader()
+        for rec in records:
+            writer.writerow({
+                "氏名":     emp_name,
+                "日付":     rec.get("date", ""),
+                "出社時間": rec.get("clock_in", ""),
+                "退社時間": rec.get("clock_out", ""),
+                "就業時間": rec.get("work_hours", ""),
+                "普通残業": rec.get("overtime", ""),
+                "休出残業": rec.get("holiday_work", ""),
+                "備考":     rec.get("note", ""),
+            })
+
+        dl_key = str(uuid.uuid4())
+        _csv_cache[dl_key] = (emp_name, output.getvalue().encode("utf-8-sig"))
+
+        return jsonify({
+            "success": True,
+            "employee_name": emp_name,
+            "record_count": len(records),
+            "records": records,
+            "download_key": dl_key,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"処理中にエラーが発生しました: {e}"}), 500
+    finally:
+        _cleanup(tmp_path)
+
+
+@app.route("/handwritten/download/<key>")
+@login_required
+def handwritten_download(key):
+    """変換済みCSVのダウンロード"""
+    item = _csv_cache.pop(key, None)
+    if not item:
+        return "CSVが見つかりません（期限切れまたは無効なキーです）", 404
+    emp_name, csv_bytes = item
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{emp_name}_勤怠データ_{timestamp}.csv"
+    return send_file(
+        io.BytesIO(csv_bytes),
+        mimetype="text/csv; charset=utf-8",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.route("/download/<key>")
