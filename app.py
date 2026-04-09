@@ -167,6 +167,48 @@ def process():
         return jsonify({"success": False, "error": f"処理中にエラーが発生しました: {e}"}), 500
 
 
+@app.route("/check_attendance_name", methods=["POST"])
+@login_required
+def check_attendance_name():
+    """出勤記録ファイルから氏名が自動取得できるか確認する"""
+    f = request.files.get("file")
+    if not f or f.filename == "":
+        return jsonify({"error": "ファイルが選択されていません"}), 400
+
+    is_pdf = Path(f.filename).suffix.lower() == ".pdf"
+    tmp_path = _save_upload(f)
+    try:
+        recs = load_attendance(tmp_path)
+        detected_name = None
+        for r in recs:
+            name = (r.get("employee_name") or "").strip()
+            if name:
+                detected_name = name
+                break
+
+        # PDFは名前の誤検出が多いため「要確認」扱い
+        # CSV/Excelで名前が取得できた場合のみ「確実」とする
+        if is_pdf:
+            return jsonify({
+                "status": "verify",   # 黄色：要確認
+                "name": detected_name or "",
+            })
+        elif detected_name:
+            return jsonify({
+                "status": "ok",       # 緑：自動取得成功
+                "name": detected_name,
+            })
+        else:
+            return jsonify({
+                "status": "missing",  # オレンジ：取得できず・要入力
+                "name": "",
+            })
+    except Exception as e:
+        return jsonify({"status": "missing", "name": "", "error": str(e)}), 400
+    finally:
+        _cleanup(tmp_path)
+
+
 @app.route("/preview", methods=["POST"])
 @login_required
 def preview():

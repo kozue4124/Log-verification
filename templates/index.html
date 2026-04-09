@@ -488,14 +488,37 @@ function setupDropArea(dropAreaId, inputId, storeKey, listId) {
 function handleFiles(files, storeKey, listId, input) {
   const store = fileStores[storeKey];
   for (const file of files) {
-    // 重複チェック
     let dup = false;
     for (const f of store.files) {
       if (f.name === file.name && f.size === file.size) { dup = true; break; }
     }
-    if (!dup) store.files.push(file);
+    if (dup) continue;
+    const idx = store.files.length;
+    store.files.push(file);
+    if (storeKey === 'attendance') {
+      store.names.push('');
+      store.nameStatus = store.nameStatus || [];
+      store.nameStatus.push('checking');
+      updateFileList(storeKey, listId, input);
+      checkAttendanceName(file, idx, listId, input);
+    }
   }
-  updateFileList(storeKey, listId, input);
+  if (storeKey !== 'attendance') updateFileList(storeKey, listId, input);
+}
+
+async function checkAttendanceName(file, idx, listId, input) {
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/check_attendance_name', { method: 'POST', body: fd });
+    const data = await res.json();
+    fileStores.attendance.nameStatus[idx] = data.detected ? 'ok' : 'missing';
+    if (data.detected) fileStores.attendance.names[idx] = data.name;
+    updateFileList('attendance', listId, input);
+  } catch {
+    fileStores.attendance.nameStatus[idx] = 'missing';
+    updateFileList('attendance', listId, input);
+  }
 }
 
 function updateFileList(storeKey, listId, input) {
@@ -508,23 +531,76 @@ function updateFileList(storeKey, listId, input) {
     item.className = 'file-item';
 
     if (storeKey === 'attendance') {
-      // 出勤記録のみ：氏名入力欄を表示
-      const isPdf = f.name.toLowerCase().endsWith('.pdf');
+      const status = (store.nameStatus || [])[i] || 'checking';
       item.style.flexWrap = 'wrap';
+
+      // 氏名欄のHTML（状態によって見た目を変える）
+      let nameRow = '';
+      if (status === 'checking') {
+        nameRow = `
+          <div style="width:100%;display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;">
+            <span style="font-size:0.78rem;color:#9CA3AF;">⏳ 氏名を確認中...</span>
+          </div>`;
+
+      } else if (status === 'ok') {
+        // CSV/Excel で氏名を確実に取得できた
+        nameRow = `
+          <div style="width:100%;display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;">
+            <span style="font-size:0.78rem;color:#059669;white-space:nowrap;">✅ 氏名:</span>
+            <input type="text" id="att_name_${i}"
+              value="${escHtml(store.names[i] || '')}"
+              oninput="fileStores.attendance.names[${i}]=this.value"
+              style="flex:1;padding:4px 8px;border:1px solid #BBF7D0;border-radius:6px;font-size:0.82rem;outline:none;background:#F0FDF4;">
+            <span style="font-size:0.72rem;color:#6B7280;">（修正可）</span>
+          </div>`;
+
+      } else if (status === 'verify') {
+        // PDF など：取得はできたが正しいか不明 → 要確認
+        const hint = store.names[i] ? `取得した値: 「${store.names[i]}」` : '氏名を取得できませんでした';
+        nameRow = `
+          <div style="width:100%;margin-top:6px;padding-left:24px;">
+            <div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:8px;">
+              <span style="font-size:1rem;flex-shrink:0;">⚠️</span>
+              <div>
+                <div style="font-size:0.82rem;color:#92400E;font-weight:600;">PDFから氏名を確認できません。正しい従業員名を入力してください。</div>
+                <div style="font-size:0.75rem;color:#B45309;margin-top:2px;">${hint}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <label style="font-size:0.78rem;color:#B45309;font-weight:700;white-space:nowrap;">氏名 <span style="color:#DC2626;">*</span></label>
+              <input type="text" id="att_name_${i}"
+                placeholder="例: 山田あゆみ"
+                value="${escHtml(store.names[i] || '')}"
+                oninput="fileStores.attendance.names[${i}]=this.value"
+                style="flex:1;padding:6px 10px;border:2px solid #F59E0B;border-radius:6px;font-size:0.88rem;outline:none;background:#FFFBEB;">
+            </div>
+          </div>`;
+
+      } else {
+        // missing：CSV/Excel でも氏名が見つからない
+        nameRow = `
+          <div style="width:100%;margin-top:6px;padding-left:24px;">
+            <div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:1rem;">⚠️</span>
+              <span style="font-size:0.82rem;color:#92400E;font-weight:600;">氏名を自動取得できませんでした。入力してください。</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <label style="font-size:0.78rem;color:#B45309;font-weight:700;white-space:nowrap;">氏名 <span style="color:#DC2626;">*</span></label>
+              <input type="text" id="att_name_${i}"
+                placeholder="例: 山田あゆみ"
+                value="${escHtml(store.names[i] || '')}"
+                oninput="fileStores.attendance.names[${i}]=this.value"
+                style="flex:1;padding:6px 10px;border:2px solid #F59E0B;border-radius:6px;font-size:0.88rem;outline:none;background:#FFFBEB;">
+            </div>
+          </div>`;
+      }
+
       item.innerHTML = `
         <span>📄</span>
         <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span>
         <span style="color:#888;font-size:0.75rem">${(f.size/1024).toFixed(1)} KB</span>
         <button class="remove-btn" onclick="removeAttendanceFile(${i},'${listId}','${input.id}')">✕</button>
-        <div style="width:100%;display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;">
-          <label style="font-size:0.78rem;color:#6B7280;white-space:nowrap;">氏名:</label>
-          <input type="text"
-            id="att_name_${i}"
-            placeholder="${isPdf ? '自動取得できない場合は入力（例: 山田あゆみ）' : '通常は自動取得'}"
-            value="${store.names[i] || ''}"
-            oninput="fileStores.attendance.names[${i}]=this.value"
-            style="flex:1;padding:4px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:0.82rem;outline:none;">
-        </div>
+        ${nameRow}
       `;
     } else {
       item.innerHTML = `
@@ -560,6 +636,18 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
 
   if (fileStores.video.files.length === 0) {
     alert('動画ログファイルを選択してください');
+    return;
+  }
+
+  // 氏名未入力チェック（missing または verify で空欄のもの）
+  const needName = fileStores.attendance.files.filter((f, i) => {
+    const status = (fileStores.attendance.nameStatus || [])[i];
+    const hasInput = (fileStores.attendance.names[i] || '').trim() !== '';
+    return (status === 'missing' || status === 'verify') && !hasInput;
+  });
+  if (needName.length > 0) {
+    const fileNames = needName.map(f => `・${f.name}`).join('\n');
+    alert(`⚠️ 以下の出勤記録ファイルで氏名が確認できていません。\n氏名を入力してから照合してください。\n\n${fileNames}`);
     return;
   }
 
